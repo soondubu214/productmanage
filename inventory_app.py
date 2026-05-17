@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
-from streamlit.components.v1 import html as st_html
 
 st.set_page_config(page_title="🏠 우리집 재고 관리", layout="centered")
 
@@ -26,31 +25,43 @@ div[data-testid="stHorizontalBlock"] { align-items: center; margin-bottom: -0.5r
 div[data-testid="stButton"] button { padding: 0.15rem 0.4rem; font-size: 0.82rem; }
 hr { margin: 0.4rem 0 !important; }
 
-/* 품목명 hover 밑줄 스타일 */
 .item-name {
     font-size: 0.95rem;
     font-weight: bold;
-    margin: 0.3rem 0 0.05rem 0;
+    display: inline;
     cursor: pointer;
-    display: inline-block;
-    border-bottom: 2px solid transparent;
-    transition: border-color 0.15s;
+    text-decoration-line: underline;
+    text-decoration-style: solid;
+    text-decoration-color: transparent;
+    text-underline-offset: 2px;
+    transition: text-decoration-color 0.15s;
 }
 .item-name:hover {
-    border-bottom: 2px solid #555;
+    text-decoration-color: #444;
 }
 .item-badge {
     font-size: 0.72rem;
     color: gray;
-    margin: 0 0 0.2rem 0;
+    margin: 0.05rem 0 0.2rem 0;
+    line-height: 1.2;
 }
+.pencil-btn {
+    font-size: 0.65rem;
+    cursor: pointer;
+    margin-left: 5px;
+    color: #aaa;
+    vertical-align: middle;
+    user-select: none;
+    border: none;
+    background: none;
+    padding: 0;
+    line-height: 1;
+}
+.pencil-btn:hover { color: #555; }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ══════════════════════════════════════════════════════════════
-# 공통 함수
-# ══════════════════════════════════════════════════════════════
 def render_inventory(category_filter=None, tab_key=""):
     today = date.today()
 
@@ -70,7 +81,6 @@ def render_inventory(category_filter=None, tab_key=""):
         days_left = (item["exp"] - today).days
         wd = warning_days if warning_days else CATEGORIES[item["category"]]["warning_days"]
 
-        # 뱃지
         status_badges = []
         if item["qty"] <= 0:
             status_badges.append("🔴 재고 없음")
@@ -88,6 +98,7 @@ def render_inventory(category_filter=None, tab_key=""):
             status_badges.insert(0, f"[{item['category']}]")
 
         status_str = "  ".join(status_badges)
+        badge_line = exp_badge + ("  " + status_str if status_str else "")
         edit_key = f"{tab_key}_{idx}"
         is_editing = st.session_state.editing.get(edit_key, False)
 
@@ -113,50 +124,62 @@ def render_inventory(category_filter=None, tab_key=""):
                         st.session_state.editing[edit_key] = False
                         st.rerun()
             else:
-                # 품목명: hover 밑줄 + 더블클릭 시 edit 버튼 자동 클릭
-                btn_key = f"edit_btn_{edit_key}"
+                # 품목명 + 연필버튼 한 줄, 유통기한 아랫줄
+                # 숨겨진 체크박스로 더블클릭 → Python rerun 트리거
+                cb_key = f"dbl_{edit_key}"
+                if cb_key not in st.session_state:
+                    st.session_state[cb_key] = False
+
                 st.markdown(
                     f"""
-                    <p class="item-name" ondblclick="triggerEdit('{btn_key}')">{item['name']}</p>
-                    <p class="item-badge">{exp_badge}{"  " + status_str if status_str else ""}</p>
-                    <script>
-                    function triggerEdit(key) {{
-                        // Streamlit 버튼 찾아서 클릭
-                        const btns = window.parent.document.querySelectorAll('button[kind="secondary"], button');
-                        for (const btn of btns) {{
-                            if (btn.innerText.trim() === '✏️_' + key) {{
-                                btn.click();
-                                break;
-                            }}
-                        }}
-                        // data-testid로 찾기
-                        const allBtns = window.parent.document.querySelectorAll('div[data-testid="stButton"] button');
-                        allBtns.forEach(btn => {{
-                            if (btn.closest('div[data-testid="stButton"]') &&
-                                btn.closest('div[data-testid="stButton"]').previousSibling) {{
-                            }}
-                        }});
-                        // key 기반으로 숨겨진 버튼 클릭
-                        setTimeout(() => {{
-                            const hiddenBtns = window.parent.document.querySelectorAll('button');
-                            hiddenBtns.forEach(b => {{
-                                if (b.getAttribute('data-edit-key') === key) b.click();
-                            }});
-                        }}, 50);
-                    }}
-                    </script>
+                    <span class="item-name" id="name_{edit_key}">{item['name']}</span><button
+                      class="pencil-btn" id="pencil_{edit_key}">✏</button>
+                    <p class="item-badge">{badge_line}</p>
                     """,
                     unsafe_allow_html=True,
                 )
-                # 실제 트리거용 숨김 버튼
+
+                # 실제 Streamlit 편집 트리거 버튼 (숨김)
                 st.markdown(
-                    f"<style>div[data-testid='stButton']:has(button[data-edit-key='{edit_key}']) {{ display:none; }}</style>",
+                    f"<style>#btn_wrap_{edit_key}{{display:none}}</style>"
+                    f"<div id='btn_wrap_{edit_key}'>",
                     unsafe_allow_html=True,
                 )
-                clicked = st.button("✏️", key=btn_key, use_container_width=True)
-                if clicked:
+                if st.button("edit", key=f"edit_btn_{edit_key}"):
                     st.session_state.editing[edit_key] = True
                     st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
+
+                # JS: 연필버튼 클릭 or 품목명 더블클릭 → 숨김 버튼 클릭
+                st.markdown(f"""
+                    <script>
+                    (function() {{
+                        function setup() {{
+                            var nameEl   = window.parent.document.getElementById('name_{edit_key}');
+                            var pencilEl = window.parent.document.getElementById('pencil_{edit_key}');
+                            var wrap     = window.parent.document.getElementById('btn_wrap_{edit_key}');
+                            if (!nameEl || !pencilEl || !wrap) return;
+
+                            function doEdit() {{
+                                var btn = wrap.querySelector('button');
+                                if (btn) btn.click();
+                            }}
+
+                            if (!nameEl._ready) {{
+                                nameEl._ready = true;
+                                nameEl.addEventListener('dblclick', doEdit);
+                            }}
+                            if (!pencilEl._ready) {{
+                                pencilEl._ready = true;
+                                pencilEl.addEventListener('click', doEdit);
+                            }}
+                        }}
+                        setup();
+                        setTimeout(setup, 300);
+                        setTimeout(setup, 800);
+                    }})();
+                    </script>
+                """, unsafe_allow_html=True)
 
         with col_qty:
             qty_color = "red" if item["qty"] <= 1 else "#333"
@@ -236,9 +259,6 @@ def render_summary(category_filter=None):
     c3.metric("유통기한 주의", f"{exp_warn}개")
 
 
-# ══════════════════════════════════════════════════════════════
-# 탭 구성
-# ══════════════════════════════════════════════════════════════
 tab_beauty, tab_pantry, tab_fridge, tab_all, tab_csv = st.tabs([
     "미용", "팬트리", "냉장고", "전체보기", "CSV"
 ])
@@ -283,8 +303,7 @@ with tab_csv:
         st.markdown("""
 **아래 형식으로 엑셀에서 만들어 CSV UTF-8로 저장하세요.**
 - 유통기한 형식: `YYYY-MM-DD` (예: 2025-06-01)
-- 대분류는 아래 세 가지 중 하나로 정확히 입력하세요:
-  - `미용` / `팬트리` / `냉장고`
+- 대분류: `미용` / `팬트리` / `냉장고`
 """)
         sample_df = pd.DataFrame({
             "물건이름": ["토너", "두부", "우유"],
@@ -306,60 +325,47 @@ with tab_csv:
         try:
             df_upload = pd.read_csv(uploaded_file, encoding="utf-8-sig")
             df_upload.columns = df_upload.columns.str.strip()
-
             required_cols = {"물건이름", "수량", "유통기한", "대분류"}
             if not required_cols.issubset(set(df_upload.columns)):
-                st.error(f"❌ 열 이름을 확인해 주세요! 필요한 열: 물건이름, 수량, 유통기한, 대분류\n현재 열: {list(df_upload.columns)}")
+                st.error(f"❌ 열 이름을 확인해 주세요! 현재 열: {list(df_upload.columns)}")
             else:
                 st.dataframe(df_upload, use_container_width=True)
                 mode = st.radio("불러오기 방식", ["기존 목록에 추가", "기존 목록 대체"], index=0)
                 if st.button("✅ 불러오기", use_container_width=True):
                     if mode == "기존 목록 대체":
                         st.session_state.inventory = []
-
                     count, skipped = 0, 0
                     for _, row in df_upload.iterrows():
                         name = str(row["물건이름"]).strip()
                         qty = int(row["수량"])
                         category = str(row["대분류"]).strip()
-
                         if category not in CATEGORY_NAMES:
-                            st.warning(f"⚠️ '{name}'의 대분류 '{category}'를 인식할 수 없어요. 건너뜀.")
                             skipped += 1
                             continue
-
                         try:
                             exp = pd.to_datetime(str(row["유통기한"])).date()
                         except Exception:
                             exp = date.today()
-                            st.warning(f"⚠️ '{name}'의 유통기한 형식 오류. 오늘 날짜로 대체할게요.")
-
                         existing = next(
                             (i for i, x in enumerate(st.session_state.inventory)
-                             if x["name"] == name and x["category"] == category),
-                            None
+                             if x["name"] == name and x["category"] == category), None
                         )
                         if existing is not None:
                             st.session_state.inventory[existing]["qty"] += qty
                         else:
                             st.session_state.inventory.append({
-                                "name": name, "qty": qty,
-                                "exp": exp, "category": category
+                                "name": name, "qty": qty, "exp": exp, "category": category
                             })
                         count += 1
-
                     st.success(f"✅ {count}개 품목을 불러왔어요!" + (f" ({skipped}개 건너뜀)" if skipped else ""))
                     st.rerun()
-
         except Exception as e:
             st.error(f"파일을 읽는 중 오류가 발생했어요: {e}")
 
     if st.session_state.inventory:
         st.divider()
-        st.subheader("현재 재고 CSV로 저장")
         df_export = pd.DataFrame([
-            {"물건이름": x["name"], "수량": x["qty"],
-             "유통기한": x["exp"], "대분류": x["category"]}
+            {"물건이름": x["name"], "수량": x["qty"], "유통기한": x["exp"], "대분류": x["category"]}
             for x in st.session_state.inventory
         ])
         csv_out = df_export.to_csv(index=False, encoding="utf-8-sig")
@@ -369,33 +375,3 @@ with tab_csv:
             file_name="우리집_재고.csv",
             mime="text/csv"
         )
-
-# ── 더블클릭 → 수정 버튼 연결 JS ─────────────────────────────
-st.markdown("""
-<script>
-(function() {
-    function attachDblClick() {
-        const names = window.parent.document.querySelectorAll('.item-name');
-        names.forEach(el => {
-            if (el._dblAttached) return;
-            el._dblAttached = true;
-            el.addEventListener('dblclick', () => {
-                // 같은 행 안에서 ✏️ 버튼 찾기
-                const row = el.closest('div[data-testid="column"]')
-                              ?.closest('div[data-testid="stHorizontalBlock"]');
-                if (!row) return;
-                const btns = row.querySelectorAll('button');
-                btns.forEach(b => {
-                    if (b.innerText.trim() === '✏️') b.click();
-                });
-            });
-        });
-    }
-    // 초기 + DOM 변경 시 재연결
-    attachDblClick();
-    new MutationObserver(attachDblClick).observe(
-        window.parent.document.body, { childList: true, subtree: true }
-    );
-})();
-</script>
-""", unsafe_allow_html=True)
