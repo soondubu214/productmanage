@@ -70,7 +70,13 @@ def render_inventory(category_filter=None, tab_key=""):
         all_items = [(i, x) for i, x in enumerate(st.session_state.inventory)
                      if x["category"] == category_filter]
         warning_days = CATEGORIES[category_filter]["warning_days"]
-        subcats = CATEGORIES[category_filter]["subcategories"]
+        # 실제 데이터에 있는 중분류를 순서 보존하며 동적으로 추출
+        # (CATEGORIES에 정의된 순서 먼저, 그 다음 새로 추가된 것)
+        defined = CATEGORIES[category_filter]["subcategories"]
+        actual = list(dict.fromkeys(
+            x.get("subcategory", "기타") for _, x in all_items
+        ))
+        subcats = [s for s in defined if s in actual] + [s for s in actual if s not in defined]
     else:
         all_items = list(enumerate(st.session_state.inventory))
         warning_days = None
@@ -165,7 +171,7 @@ def render_inventory(category_filter=None, tab_key=""):
             # 가나다 순 정렬
             sub_items = sorted(sub_items, key=lambda t: t[1]["name"])
             n = len(sub_items)
-            with st.expander(f"· {sub}  ({n}개)", expanded=True):
+            with st.expander(f"{sub}  ({n}개)", expanded=True):
                 for idx, item in sub_items:
                     render_row(idx, item, wd)
     else:
@@ -192,7 +198,12 @@ def render_add_form(default_category):
                                          index=CATEGORY_NAMES.index(default_category))
         with col_sub:
             subs = CATEGORIES[item_category]["subcategories"]
-            item_sub = st.selectbox("중분류", subs)
+            sub_options = subs + ["직접 입력"]
+            sub_choice = st.selectbox("중분류", sub_options)
+        if sub_choice == "직접 입력":
+            item_sub = st.text_input("중분류 직접 입력", placeholder="예) 영양제", key=f"new_sub_{default_category}")
+        else:
+            item_sub = sub_choice
 
         submitted = st.form_submit_button("➕ 추가하기", use_container_width=True)
         if submitted:
@@ -208,12 +219,14 @@ def render_add_form(default_category):
                     st.session_state.inventory[existing]["qty"] += item_qty
                     st.success(f"'{item_name}' 수량을 {item_qty}개 추가했어요!")
                 else:
+                    if item_sub and item_sub not in CATEGORIES[item_category]["subcategories"]:
+                        CATEGORIES[item_category]["subcategories"].append(item_sub)
                     st.session_state.inventory.append({
                         "name": item_name.strip(),
                         "qty": item_qty,
                         "exp": item_exp,
                         "category": item_category,
-                        "subcategory": item_sub,
+                        "subcategory": item_sub if item_sub else "기타",
                     })
                     st.success(f"'{item_name}'을(를) 추가했어요!")
 
@@ -353,9 +366,10 @@ with tab_csv:
                         if raw_sub is None or pd.isna(raw_sub) or str(raw_sub).strip() == "":
                             subcategory = "기타"
                         else:
-                            sub_val = str(raw_sub).strip()
-                            valid_subs = CATEGORIES[category]["subcategories"]
-                            subcategory = sub_val if sub_val in valid_subs else "기타"
+                            subcategory = str(raw_sub).strip()
+                            # 새 중분류면 자동 등록
+                            if subcategory not in CATEGORIES[category]["subcategories"]:
+                                CATEGORIES[category]["subcategories"].append(subcategory)
 
                         existing = next(
                             (i for i, x in enumerate(st.session_state.inventory)
