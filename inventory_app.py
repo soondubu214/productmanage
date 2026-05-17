@@ -45,7 +45,7 @@ def render_inventory(category_filter=None, tab_key=""):
         badges = []
         if item["qty"] <= 0:
             badges.append("🔴 재고 없음")
-        elif item["qty"] <= 2:
+        elif item["qty"] <= 1:
             badges.append("🛒 구매 필요")
 
         if days_left < 0:
@@ -60,20 +60,24 @@ def render_inventory(category_filter=None, tab_key=""):
 
         badge_str = "  ".join(badges)
 
-        col_name, col_qty, col_minus, col_delete = st.columns([3, 1, 1, 1])
+        col_name, col_qty, col_minus, col_plus, col_delete = st.columns([3, 1, 1, 1, 1])
         with col_name:
             st.markdown(f"**{item['name']}**  \n{badge_str}")
         with col_qty:
-            qty_color = "red" if item["qty"] <= 2 else "green"
+            qty_color = "red" if item["qty"] <= 1 else "black"
             st.markdown(
-                f"<h3 style='color:{qty_color}; margin:0'>{item['qty']}개</h3>",
+                f"<p style='color:{qty_color}; font-size:1.1rem; font-weight:bold; margin:0.5rem 0 0 0'>{item['qty']}개</p>",
                 unsafe_allow_html=True,
             )
         with col_minus:
-            if st.button("－1", key=f"minus_{tab_key}_{idx}", use_container_width=True):
+            if st.button("－", key=f"minus_{tab_key}_{idx}", use_container_width=True):
                 if item["qty"] > 0:
                     st.session_state.inventory[idx]["qty"] -= 1
                     st.rerun()
+        with col_plus:
+            if st.button("＋", key=f"plus_{tab_key}_{idx}", use_container_width=True):
+                st.session_state.inventory[idx]["qty"] += 1
+                st.rerun()
         with col_delete:
             if st.button("🗑️", key=f"del_{tab_key}_{idx}", use_container_width=True):
                 st.session_state.inventory.pop(idx)
@@ -126,7 +130,7 @@ def render_summary(category_filter=None):
     if not items:
         return
     total = len(items)
-    need_buy = sum(1 for x in items if x["qty"] <= 2)
+    need_buy = sum(1 for x in items if x["qty"] <= 1)
     exp_warn = sum(
         1 for x in items
         if 0 <= (x["exp"] - today).days <= CATEGORIES[x["category"]]["warning_days"]
