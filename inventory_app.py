@@ -336,16 +336,43 @@ with tab_csv:
                         st.session_state.inventory = []
                     count, skipped = 0, 0
                     for _, row in df_upload.iterrows():
-                        name = str(row["물건이름"]).strip()
-                        qty = int(row["수량"])
-                        category = str(row["대분류"]).strip()
+                        # 품목명이 비어있으면 빈 행으로 간주하고 건너뜀
+                        raw_name = row["물건이름"]
+                        if pd.isna(raw_name) or str(raw_name).strip() == "":
+                            continue
+
+                        name = str(raw_name).strip()
+
+                        # 수량: 비어있으면 기본값 1
+                        raw_qty = row["수량"]
+                        if pd.isna(raw_qty) or str(raw_qty).strip() == "":
+                            qty = 1
+                        else:
+                            try:
+                                qty = int(float(str(raw_qty).strip()))
+                            except Exception:
+                                qty = 1
+
+                        # 대분류
+                        raw_cat = row["대분류"]
+                        if pd.isna(raw_cat):
+                            skipped += 1
+                            continue
+                        category = str(raw_cat).strip()
                         if category not in CATEGORY_NAMES:
                             skipped += 1
                             continue
-                        try:
-                            exp = pd.to_datetime(str(row["유통기한"])).date()
-                        except Exception:
+
+                        # 유통기한: 비어있으면 오늘 날짜
+                        raw_exp = row["유통기한"]
+                        if pd.isna(raw_exp) or str(raw_exp).strip() == "":
                             exp = date.today()
+                        else:
+                            try:
+                                exp = pd.to_datetime(str(raw_exp).strip()).date()
+                            except Exception:
+                                exp = date.today()
+
                         existing = next(
                             (i for i, x in enumerate(st.session_state.inventory)
                              if x["name"] == name and x["category"] == category), None
