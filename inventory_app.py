@@ -21,43 +21,22 @@ if "editing" not in st.session_state:
 
 st.markdown("""
 <style>
-div[data-testid="stHorizontalBlock"] { align-items: center; margin-bottom: -0.5rem; }
-div[data-testid="stButton"] button { padding: 0.15rem 0.4rem; font-size: 0.82rem; }
-hr { margin: 0.4rem 0 !important; }
-
+div[data-testid="stHorizontalBlock"] { align-items: center; margin-top: -0.3rem; margin-bottom: -0.3rem; }
+div[data-testid="stButton"] button { padding: 0.1rem 0.35rem; font-size: 0.80rem; }
+hr { margin: 0.25rem 0 !important; }
 .item-name {
-    font-size: 0.95rem;
+    font-size: 0.90rem;
     font-weight: bold;
-    display: inline;
-    cursor: pointer;
-    text-decoration-line: underline;
-    text-decoration-style: solid;
-    text-decoration-color: transparent;
-    text-underline-offset: 2px;
-    transition: text-decoration-color 0.15s;
-}
-.item-name:hover {
-    text-decoration-color: #444;
+    margin: 0;
+    line-height: 1.3;
 }
 .item-badge {
-    font-size: 0.72rem;
+    font-size: 0.70rem;
     color: gray;
-    margin: 0.05rem 0 0.2rem 0;
+    margin: 0;
     line-height: 1.2;
+    padding-bottom: 0.1rem;
 }
-.pencil-btn {
-    font-size: 0.65rem;
-    cursor: pointer;
-    margin-left: 5px;
-    color: #aaa;
-    vertical-align: middle;
-    user-select: none;
-    border: none;
-    background: none;
-    padding: 0;
-    line-height: 1;
-}
-.pencil-btn:hover { color: #555; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -84,25 +63,23 @@ def render_inventory(category_filter=None, tab_key=""):
         status_badges = []
         if item["qty"] <= 0:
             status_badges.append("🔴 재고 없음")
-        elif item["qty"] <= 1:
-            status_badges.append("🛒 구매 필요")
-
-        if days_left < 0:
-            exp_badge = "⛔ 유통기한 만료"
-        elif days_left <= wd:
-            exp_badge = f"⚠️ 주의 (D-{days_left})"
-        else:
-            exp_badge = f"✅ D-{days_left}"
 
         if not category_filter:
             status_badges.insert(0, f"[{item['category']}]")
 
         status_str = "  ".join(status_badges)
-        badge_line = exp_badge + ("  " + status_str if status_str else "")
+
+        if days_left < 0 or days_left <= wd:
+            name_prefix = "⚠️ "
+        else:
+            name_prefix = ""
+
+        exp_text = item["exp"].strftime("%Y.%m.%d")
+        badge_line = exp_text + ("  " + status_str if status_str else "")
         edit_key = f"{tab_key}_{idx}"
         is_editing = st.session_state.editing.get(edit_key, False)
 
-        col_name, col_qty, col_minus, col_plus, col_delete = st.columns([3, 1, 1, 1, 1])
+        col_name, col_qty, col_minus, col_plus, col_edit, col_delete = st.columns([3, 1, 1, 1, 1, 1])
 
         with col_name:
             if is_editing:
@@ -124,67 +101,15 @@ def render_inventory(category_filter=None, tab_key=""):
                         st.session_state.editing[edit_key] = False
                         st.rerun()
             else:
-                # 품목명 + 연필버튼 한 줄, 유통기한 아랫줄
-                # 숨겨진 체크박스로 더블클릭 → Python rerun 트리거
-                cb_key = f"dbl_{edit_key}"
-                if cb_key not in st.session_state:
-                    st.session_state[cb_key] = False
-
                 st.markdown(
-                    f"""
-                    <span class="item-name" id="name_{edit_key}">{item['name']}</span><button
-                      class="pencil-btn" id="pencil_{edit_key}">✏</button>
-                    <p class="item-badge">{badge_line}</p>
-                    """,
+                    f'''<p class="item-name">{name_prefix}{item['name']}</p>
+<p class="item-badge">{badge_line}</p>''',
                     unsafe_allow_html=True,
                 )
-
-                # 실제 Streamlit 편집 트리거 버튼 (숨김)
-                st.markdown(
-                    f"<style>#btn_wrap_{edit_key}{{display:none}}</style>"
-                    f"<div id='btn_wrap_{edit_key}'>",
-                    unsafe_allow_html=True,
-                )
-                if st.button("edit", key=f"edit_btn_{edit_key}"):
-                    st.session_state.editing[edit_key] = True
-                    st.rerun()
-                st.markdown("</div>", unsafe_allow_html=True)
-
-                # JS: 연필버튼 클릭 or 품목명 더블클릭 → 숨김 버튼 클릭
-                st.markdown(f"""
-                    <script>
-                    (function() {{
-                        function setup() {{
-                            var nameEl   = window.parent.document.getElementById('name_{edit_key}');
-                            var pencilEl = window.parent.document.getElementById('pencil_{edit_key}');
-                            var wrap     = window.parent.document.getElementById('btn_wrap_{edit_key}');
-                            if (!nameEl || !pencilEl || !wrap) return;
-
-                            function doEdit() {{
-                                var btn = wrap.querySelector('button');
-                                if (btn) btn.click();
-                            }}
-
-                            if (!nameEl._ready) {{
-                                nameEl._ready = true;
-                                nameEl.addEventListener('dblclick', doEdit);
-                            }}
-                            if (!pencilEl._ready) {{
-                                pencilEl._ready = true;
-                                pencilEl.addEventListener('click', doEdit);
-                            }}
-                        }}
-                        setup();
-                        setTimeout(setup, 300);
-                        setTimeout(setup, 800);
-                    }})();
-                    </script>
-                """, unsafe_allow_html=True)
 
         with col_qty:
-            qty_color = "red" if item["qty"] <= 1 else "#333"
             st.markdown(
-                f"<p style='color:{qty_color}; font-size:0.92rem; font-weight:bold; margin:0.3rem 0 0 0'>{item['qty']}개</p>",
+                f"<p style='color:#333; font-size:0.92rem; font-weight:bold; margin:0.3rem 0 0 0'>{item['qty']}개</p>",
                 unsafe_allow_html=True,
             )
         with col_minus:
@@ -195,6 +120,10 @@ def render_inventory(category_filter=None, tab_key=""):
         with col_plus:
             if st.button("＋", key=f"plus_{tab_key}_{idx}", use_container_width=True):
                 st.session_state.inventory[idx]["qty"] += 1
+                st.rerun()
+        with col_edit:
+            if st.button("✏️", key=f"edit_btn_{edit_key}", use_container_width=True):
+                st.session_state.editing[edit_key] = True
                 st.rerun()
         with col_delete:
             if st.button("🗑️", key=f"del_{tab_key}_{idx}", use_container_width=True):
@@ -248,15 +177,15 @@ def render_summary(category_filter=None):
     if not items:
         return
     total = len(items)
-    need_buy = sum(1 for x in items if x["qty"] <= 1)
+    out_of_stock = sum(1 for x in items if x["qty"] <= 0)
     exp_warn = sum(
         1 for x in items
-        if 0 <= (x["exp"] - today).days <= CATEGORIES[x["category"]]["warning_days"]
+        if (x["exp"] - today).days <= CATEGORIES[x["category"]]["warning_days"]
     )
     c1, c2, c3 = st.columns(3)
     c1.metric("전체 품목", f"{total}개")
-    c2.metric("구매 필요", f"{need_buy}개")
-    c3.metric("유통기한 주의", f"{exp_warn}개")
+    c2.metric("재고 없음", f"{out_of_stock}개")
+    c3.metric("❕ 유통기한 주의", f"{exp_warn}개")
 
 
 tab_beauty, tab_pantry, tab_fridge, tab_all, tab_csv = st.tabs([
