@@ -8,9 +8,22 @@ st.title("🏠 우리집 재고 관리")
 st.caption("물건을 추가하고, 수량을 관리하고, 유통기한을 체크하세요!")
 
 CATEGORIES = {
-    "미용":  {"warning_days": 30},
-    "팬트리": {"warning_days": 7},
-    "냉장고": {"warning_days": 3},
+    "미용":  {
+        "warning_days": 30,
+        "subcategories": ["스킨케어","바디케어","헤어케어","메이크업","미용소품","기타"]
+    },
+    "팬트리": {
+        "warning_days": 7,
+        "subcategories": ["양념류","장류·오일·식초","가루류","기타"]
+    },
+    "냉장고": {
+        "warning_days": 3,
+        "subcategories": ["기타"]
+    },
+    "냉동실": {
+        "warning_days": 90,
+        "subcategories": ["채소류","밀프렙","해산물","육류","밀가루","가공식품","기타"]
+    },
 }
 CATEGORY_NAMES = list(CATEGORIES.keys())
 
@@ -37,6 +50,15 @@ hr { margin: 0.25rem 0 !important; }
     line-height: 1.2;
     padding-bottom: 0.1rem;
 }
+.subcat-header {
+    font-size: 0.78rem;
+    font-weight: bold;
+    color: #555;
+    background: #f5f5f5;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    margin: 0.5rem 0 0.2rem 0;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -45,37 +67,33 @@ def render_inventory(category_filter=None, tab_key=""):
     today = date.today()
 
     if category_filter:
-        items = [(i, x) for i, x in enumerate(st.session_state.inventory)
-                 if x["category"] == category_filter]
+        all_items = [(i, x) for i, x in enumerate(st.session_state.inventory)
+                     if x["category"] == category_filter]
         warning_days = CATEGORIES[category_filter]["warning_days"]
+        subcats = CATEGORIES[category_filter]["subcategories"]
     else:
-        items = list(enumerate(st.session_state.inventory))
+        all_items = list(enumerate(st.session_state.inventory))
         warning_days = None
+        subcats = None
 
-    if not items:
+    if not all_items:
         st.info("아직 물건이 없어요. 아래에서 추가해 보세요! 😊")
         return
 
-    for idx, item in items:
+    def render_row(idx, item, wd):
         days_left = (item["exp"] - today).days
-        wd = warning_days if warning_days else CATEGORIES[item["category"]]["warning_days"]
 
         status_badges = []
         if item["qty"] <= 0:
             status_badges.append("🔴 재고 없음")
-
         if not category_filter:
             status_badges.insert(0, f"[{item['category']}]")
-
         status_str = "  ".join(status_badges)
 
-        if days_left < 0 or days_left <= wd:
-            name_prefix = "⚠️ "
-        else:
-            name_prefix = ""
-
+        name_prefix = "⚠️ " if (days_left < 0 or days_left <= wd) else ""
         exp_text = item["exp"].strftime("%Y.%m.%d")
         badge_line = exp_text + ("  " + status_str if status_str else "")
+
         edit_key = f"{tab_key}_{idx}"
         is_editing = st.session_state.editing.get(edit_key, False)
 
@@ -83,17 +101,22 @@ def render_inventory(category_filter=None, tab_key=""):
 
         with col_name:
             if is_editing:
-                new_name = st.text_input(
-                    "품목명 수정",
-                    value=item["name"],
-                    key=f"edit_input_{edit_key}",
-                    label_visibility="collapsed",
-                )
+                new_name = st.text_input("품목명 수정", value=item["name"],
+                                         key=f"edit_input_{edit_key}",
+                                         label_visibility="collapsed")
+                # 중분류 수정도 가능
+                current_cat = item["category"]
+                subs = CATEGORIES[current_cat]["subcategories"]
+                cur_sub_idx = subs.index(item.get("subcategory","기타")) if item.get("subcategory","기타") in subs else len(subs)-1
+                new_sub = st.selectbox("중분류", subs, index=cur_sub_idx,
+                                       key=f"edit_sub_{edit_key}",
+                                       label_visibility="collapsed")
                 c1, c2 = st.columns(2)
                 with c1:
                     if st.button("저장", key=f"save_{edit_key}", use_container_width=True):
                         if new_name.strip():
                             st.session_state.inventory[idx]["name"] = new_name.strip()
+                        st.session_state.inventory[idx]["subcategory"] = new_sub
                         st.session_state.editing[edit_key] = False
                         st.rerun()
                 with c2:
@@ -102,8 +125,8 @@ def render_inventory(category_filter=None, tab_key=""):
                         st.rerun()
             else:
                 st.markdown(
-                    f'''<p class="item-name">{name_prefix}{item['name']}</p>
-<p class="item-badge">{badge_line}</p>''',
+                    f'<p class="item-name">{name_prefix}{item["name"]}</p>'
+                    f'<p class="item-badge">{badge_line}</p>',
                     unsafe_allow_html=True,
                 )
 
@@ -132,6 +155,26 @@ def render_inventory(category_filter=None, tab_key=""):
 
         st.divider()
 
+    # 중분류별 그룹핑 (대분류 탭일 때)
+    if subcats and len(subcats) > 1:
+        for sub in subcats:
+            sub_items = [(i, x) for i, x in all_items if x.get("subcategory", "기타") == sub]
+            if not sub_items:
+                continue
+            wd = warning_days if warning_days else CATEGORIES[sub_items[0][1]["category"]]["warning_days"]
+            # 가나다 순 정렬
+            sub_items = sorted(sub_items, key=lambda t: t[1]["name"])
+            n = len(sub_items)
+            with st.expander(f"· {sub}  ({n}개)", expanded=True):
+                for idx, item in sub_items:
+                    render_row(idx, item, wd)
+    else:
+        # 전체보기: 가나다 순
+        sorted_items = sorted(all_items, key=lambda t: (t[1]["category"], t[1].get("subcategory","기타"), t[1]["name"]))
+        for idx, item in sorted_items:
+            wd = warning_days if warning_days else CATEGORIES[item["category"]]["warning_days"]
+            render_row(idx, item, wd)
+
 
 def render_add_form(default_category):
     with st.form(f"add_form_{default_category}", clear_on_submit=True):
@@ -139,12 +182,17 @@ def render_add_form(default_category):
         with col1:
             item_name = st.text_input("물건 이름", placeholder="예) 토너, 두부, 우유")
         with col2:
-            item_qty = st.number_input("수량", min_value=1, max_value=999, value=1)
+            item_qty = st.number_input("수량", min_value=0, max_value=999, value=1)
         with col3:
             item_exp = st.date_input("유통기한", value=date.today() + timedelta(days=30))
 
-        item_category = st.selectbox("대분류", CATEGORY_NAMES,
-                                     index=CATEGORY_NAMES.index(default_category))
+        col_cat, col_sub = st.columns(2)
+        with col_cat:
+            item_category = st.selectbox("대분류", CATEGORY_NAMES,
+                                         index=CATEGORY_NAMES.index(default_category))
+        with col_sub:
+            subs = CATEGORIES[item_category]["subcategories"]
+            item_sub = st.selectbox("중분류", subs)
 
         submitted = st.form_submit_button("➕ 추가하기", use_container_width=True)
         if submitted:
@@ -165,6 +213,7 @@ def render_add_form(default_category):
                         "qty": item_qty,
                         "exp": item_exp,
                         "category": item_category,
+                        "subcategory": item_sub,
                     })
                     st.success(f"'{item_name}'을(를) 추가했어요!")
 
@@ -185,11 +234,12 @@ def render_summary(category_filter=None):
     c1, c2, c3 = st.columns(3)
     c1.metric("전체 품목", f"{total}개")
     c2.metric("재고 없음", f"{out_of_stock}개")
-    c3.metric("❕ 유통기한 주의", f"{exp_warn}개")
+    c3.metric("⚠️ 유통기한 주의", f"{exp_warn}개")
 
 
-tab_beauty, tab_pantry, tab_fridge, tab_all, tab_csv = st.tabs([
-    "미용", "팬트리", "냉장고", "전체보기", "CSV"
+# ── 탭 ────────────────────────────────────────────────────────
+tab_beauty, tab_pantry, tab_fridge, tab_frozen, tab_all, tab_csv = st.tabs([
+    "미용", "팬트리", "냉장고", "냉동실", "전체보기", "CSV"
 ])
 
 with tab_beauty:
@@ -219,6 +269,15 @@ with tab_fridge:
     st.subheader("➕ 추가하기")
     render_add_form("냉장고")
 
+with tab_frozen:
+    st.subheader("냉동실")
+    st.caption("유통기한 90일 이내 시 주의 표시")
+    render_summary("냉동실")
+    st.divider()
+    render_inventory("냉동실", tab_key="frozen")
+    st.subheader("➕ 추가하기")
+    render_add_form("냉동실")
+
 with tab_all:
     st.subheader("전체보기")
     render_summary()
@@ -230,69 +289,56 @@ with tab_csv:
 
     with st.expander("CSV 형식 안내 (클릭해서 펼치기)"):
         st.markdown("""
-**아래 형식으로 엑셀에서 만들어 CSV UTF-8로 저장하세요.**
-- 유통기한 형식: `YYYY-MM-DD` (예: 2025-06-01)
-- 대분류: `미용` / `팬트리` / `냉장고`
+**필요한 열: 물건이름 / 수량 / 유통기한 / 대분류 / 중분류**
+- 유통기한 형식: `YYYY-MM-DD`
+- 대분류: `미용` / `팬트리` / `냉장고` / `냉동실`
 """)
         sample_df = pd.DataFrame({
-            "물건이름": ["토너", "두부", "우유"],
-            "수량": [2, 3, 1],
-            "유통기한": ["2026-01-01", "2025-06-01", "2025-05-20"],
-            "대분류": ["미용", "팬트리", "냉장고"],
+            "물건이름": ["토너","굵은소금","삼겹살 구이용"],
+            "수량": [1, 2, 5],
+            "유통기한": ["2026-01-01","",""],
+            "대분류": ["미용","팬트리","냉동실"],
+            "중분류": ["스킨케어","양념류","육류"],
         })
         st.dataframe(sample_df, use_container_width=True)
         sample_csv = sample_df.to_csv(index=False, encoding="utf-8-sig")
-        st.download_button(
-            label="⬇️ 샘플 CSV 다운로드",
-            data=sample_csv,
-            file_name="재고_샘플.csv",
-            mime="text/csv"
-        )
+        st.download_button("⬇️ 샘플 CSV 다운로드", data=sample_csv,
+                           file_name="재고_샘플.csv", mime="text/csv")
 
     uploaded_file = st.file_uploader("CSV 파일 선택", type=["csv"])
     if uploaded_file is not None:
         try:
             df_upload = pd.read_csv(uploaded_file, encoding="utf-8-sig")
             df_upload.columns = df_upload.columns.str.strip()
+
             required_cols = {"물건이름", "수량", "유통기한", "대분류"}
             if not required_cols.issubset(set(df_upload.columns)):
-                st.error(f"❌ 열 이름을 확인해 주세요! 현재 열: {list(df_upload.columns)}")
+                st.error(f"❌ 필요한 열이 없어요! 현재 열: {list(df_upload.columns)}")
             else:
                 st.dataframe(df_upload, use_container_width=True)
                 mode = st.radio("불러오기 방식", ["기존 목록에 추가", "기존 목록 대체"], index=0)
                 if st.button("✅ 불러오기", use_container_width=True):
                     if mode == "기존 목록 대체":
                         st.session_state.inventory = []
+
                     count, skipped = 0, 0
                     for _, row in df_upload.iterrows():
-                        # 품목명이 비어있으면 빈 행으로 간주하고 건너뜀
                         raw_name = row["물건이름"]
                         if pd.isna(raw_name) or str(raw_name).strip() == "":
                             continue
 
                         name = str(raw_name).strip()
 
-                        # 수량: 비어있으면 기본값 1
                         raw_qty = row["수량"]
-                        if pd.isna(raw_qty) or str(raw_qty).strip() == "":
-                            qty = 1
-                        else:
-                            try:
-                                qty = int(float(str(raw_qty).strip()))
-                            except Exception:
-                                qty = 1
+                        qty = 1 if pd.isna(raw_qty) or str(raw_qty).strip() == "" else int(float(str(raw_qty).strip()))
 
-                        # 대분류
                         raw_cat = row["대분류"]
                         if pd.isna(raw_cat):
-                            skipped += 1
-                            continue
+                            skipped += 1; continue
                         category = str(raw_cat).strip()
                         if category not in CATEGORY_NAMES:
-                            skipped += 1
-                            continue
+                            skipped += 1; continue
 
-                        # 유통기한: 비어있으면 오늘 날짜
                         raw_exp = row["유통기한"]
                         if pd.isna(raw_exp) or str(raw_exp).strip() == "":
                             exp = date.today()
@@ -302,6 +348,15 @@ with tab_csv:
                             except Exception:
                                 exp = date.today()
 
+                        # 중분류: 있으면 사용, 없으면 기타
+                        raw_sub = row.get("중분류", None)
+                        if raw_sub is None or pd.isna(raw_sub) or str(raw_sub).strip() == "":
+                            subcategory = "기타"
+                        else:
+                            sub_val = str(raw_sub).strip()
+                            valid_subs = CATEGORIES[category]["subcategories"]
+                            subcategory = sub_val if sub_val in valid_subs else "기타"
+
                         existing = next(
                             (i for i, x in enumerate(st.session_state.inventory)
                              if x["name"] == name and x["category"] == category), None
@@ -310,24 +365,24 @@ with tab_csv:
                             st.session_state.inventory[existing]["qty"] += qty
                         else:
                             st.session_state.inventory.append({
-                                "name": name, "qty": qty, "exp": exp, "category": category
+                                "name": name, "qty": qty, "exp": exp,
+                                "category": category, "subcategory": subcategory
                             })
                         count += 1
+
                     st.success(f"✅ {count}개 품목을 불러왔어요!" + (f" ({skipped}개 건너뜀)" if skipped else ""))
                     st.rerun()
+
         except Exception as e:
             st.error(f"파일을 읽는 중 오류가 발생했어요: {e}")
 
     if st.session_state.inventory:
         st.divider()
         df_export = pd.DataFrame([
-            {"물건이름": x["name"], "수량": x["qty"], "유통기한": x["exp"], "대분류": x["category"]}
+            {"물건이름": x["name"], "수량": x["qty"], "유통기한": x["exp"],
+             "대분류": x["category"], "중분류": x.get("subcategory","기타")}
             for x in st.session_state.inventory
         ])
         csv_out = df_export.to_csv(index=False, encoding="utf-8-sig")
-        st.download_button(
-            label="📥 전체 재고 CSV 저장",
-            data=csv_out,
-            file_name="우리집_재고.csv",
-            mime="text/csv"
-        )
+        st.download_button("📥 전체 재고 CSV 저장", data=csv_out,
+                           file_name="우리집_재고.csv", mime="text/csv")
