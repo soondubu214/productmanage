@@ -8,131 +8,50 @@ st.set_page_config(page_title="🏠 우리집 재고 관리", layout="centered")
 st.title("🏠 우리집 재고 관리")
 st.caption("물건을 추가하고, 수량을 관리하고, 유통기한을 체크하세요!")
 
+# ── 대분류 정의 ───────────────────────────────────────────────
+CATEGORIES = {
+    "💄 화장품":         {"emoji": "💄", "warning_days": 30},
+    "🛒 식재료 (새것)":  {"emoji": "🛒", "warning_days": 7},
+    "🧊 식재료 (냉장)":  {"emoji": "🧊", "warning_days": 3},
+}
+CATEGORY_NAMES = list(CATEGORIES.keys())
+
 # ── 세션 상태 초기화 ──────────────────────────────────────────
 if "inventory" not in st.session_state:
-    st.session_state.inventory = []
+    st.session_state.inventory = []   # {name, qty, exp, category}
 
 # ══════════════════════════════════════════════════════════════
-# 1. CSV 업로드
+# 탭 구성: 대분류 3개 + 전체보기 + CSV
 # ══════════════════════════════════════════════════════════════
-st.subheader("📂 CSV 파일로 한꺼번에 불러오기")
-
-with st.expander("📋 CSV 형식 안내 (클릭해서 펼치기)"):
-    st.markdown("""
-**아래 형식으로 엑셀/메모장에서 만들어 저장하세요.**
-- 파일 저장 시 형식: `CSV UTF-8` 선택
-- 유통기한 형식: `YYYY-MM-DD` (예: 2025-06-01)
-""")
-    sample_df = pd.DataFrame({
-        "물건이름": ["두부", "우유", "샴푸"],
-        "수량": [3, 1, 2],
-        "유통기한": ["2025-06-01", "2025-05-20", "2026-01-01"]
-    })
-    st.dataframe(sample_df, use_container_width=True)
-
-    sample_csv = sample_df.to_csv(index=False, encoding="utf-8-sig")
-    st.download_button(
-        label="⬇️ 샘플 CSV 다운로드",
-        data=sample_csv,
-        file_name="재고_샘플.csv",
-        mime="text/csv"
-    )
-
-uploaded_file = st.file_uploader("CSV 파일 선택", type=["csv"])
-
-if uploaded_file is not None:
-    try:
-        df_upload = pd.read_csv(uploaded_file, encoding="utf-8-sig")
-        df_upload.columns = df_upload.columns.str.strip()
-
-        required_cols = {"물건이름", "수량", "유통기한"}
-        if not required_cols.issubset(set(df_upload.columns)):
-            st.error(f"❌ 열 이름이 올바르지 않아요! '물건이름', '수량', '유통기한' 이 세 가지가 있어야 해요.\n현재 열: {list(df_upload.columns)}")
-        else:
-            st.dataframe(df_upload, use_container_width=True)
-            mode = st.radio("불러오기 방식", ["기존 목록에 추가", "기존 목록 대체"], index=0)
-            if st.button("✅ 불러오기", use_container_width=True):
-                if mode == "기존 목록 대체":
-                    st.session_state.inventory = []
-
-                count = 0
-                for _, row in df_upload.iterrows():
-                    name = str(row["물건이름"]).strip()
-                    qty = int(row["수량"])
-                    try:
-                        exp = pd.to_datetime(str(row["유통기한"])).date()
-                    except Exception:
-                        st.warning(f"⚠️ '{name}'의 유통기한 형식이 올바르지 않아요. 오늘 날짜로 대신 입력할게요.")
-                        exp = date.today()
-
-                    existing = next(
-                        (i for i, x in enumerate(st.session_state.inventory) if x["name"] == name),
-                        None
-                    )
-                    if existing is not None:
-                        st.session_state.inventory[existing]["qty"] += qty
-                    else:
-                        st.session_state.inventory.append({"name": name, "qty": qty, "exp": exp})
-                    count += 1
-
-                st.success(f"✅ {count}개 품목을 불러왔어요!")
-                st.rerun()
-
-    except Exception as e:
-        st.error(f"파일을 읽는 중 오류가 발생했어요: {e}")
-
-st.divider()
+tab_cosmetic, tab_new, tab_fridge, tab_all, tab_csv = st.tabs([
+    "💄 화장품",
+    "🛒 식재료 (새것)",
+    "🧊 식재료 (냉장)",
+    "📋 전체보기",
+    "📂 CSV",
+])
 
 # ══════════════════════════════════════════════════════════════
-# 2. 물건 직접 추가
+# 공통 함수: 카테고리별 재고 렌더링
 # ══════════════════════════════════════════════════════════════
-st.subheader("➕ 물건 직접 추가하기")
-
-with st.form("add_item_form", clear_on_submit=True):
-    col1, col2, col3 = st.columns([2, 1, 1])
-    with col1:
-        item_name = st.text_input("물건 이름", placeholder="예) 두부, 우유, 샴푸")
-    with col2:
-        item_qty = st.number_input("수량", min_value=1, max_value=999, value=1)
-    with col3:
-        item_exp = st.date_input("유통기한", value=date.today() + timedelta(days=30))
-
-    submitted = st.form_submit_button("추가하기", use_container_width=True)
-
-    if submitted:
-        if item_name.strip() == "":
-            st.error("물건 이름을 입력해 주세요!")
-        else:
-            existing = next(
-                (i for i, x in enumerate(st.session_state.inventory) if x["name"] == item_name.strip()),
-                None
-            )
-            if existing is not None:
-                st.session_state.inventory[existing]["qty"] += item_qty
-                st.success(f"'{item_name}' 수량을 {item_qty}개 추가했어요!")
-            else:
-                st.session_state.inventory.append({
-                    "name": item_name.strip(),
-                    "qty": item_qty,
-                    "exp": item_exp,
-                })
-                st.success(f"'{item_name}'을(를) 목록에 추가했어요!")
-
-st.divider()
-
-# ══════════════════════════════════════════════════════════════
-# 3. 재고 현황
-# ══════════════════════════════════════════════════════════════
-st.subheader("📦 현재 재고 현황")
-
-if len(st.session_state.inventory) == 0:
-    st.info("아직 물건이 없어요. 위에서 CSV를 업로드하거나 직접 추가해 보세요! 😊")
-else:
+def render_inventory(category_filter=None):
     today = date.today()
-    warning_days = 7
 
-    for idx, item in enumerate(st.session_state.inventory):
+    if category_filter:
+        items = [(i, x) for i, x in enumerate(st.session_state.inventory)
+                 if x["category"] == category_filter]
+        warning_days = CATEGORIES[category_filter]["warning_days"]
+    else:
+        items = list(enumerate(st.session_state.inventory))
+        warning_days = None  # 전체보기는 카테고리별로 다름
+
+    if not items:
+        st.info("아직 물건이 없어요. 아래에서 추가해 보세요! 😊")
+        return
+
+    for idx, item in items:
         days_left = (item["exp"] - today).days
+        wd = warning_days if warning_days else CATEGORIES[item["category"]]["warning_days"]
 
         badges = []
         if item["qty"] <= 0:
@@ -142,15 +61,18 @@ else:
 
         if days_left < 0:
             badges.append("⛔ 유통기한 만료")
-        elif days_left <= warning_days:
+        elif days_left <= wd:
             badges.append(f"⚠️ 주의 (D-{days_left})")
         else:
             badges.append(f"✅ D-{days_left}")
 
+        # 전체보기일 때 카테고리 뱃지 추가
+        if not category_filter:
+            badges.insert(0, item["category"].split(" ")[0])  # 이모지만
+
         badge_str = "  ".join(badges)
 
         col_name, col_qty, col_minus, col_delete = st.columns([3, 1, 1, 1])
-
         with col_name:
             st.markdown(f"**{item['name']}**  \n{badge_str}")
         with col_qty:
@@ -164,8 +86,6 @@ else:
                 if item["qty"] > 0:
                     st.session_state.inventory[idx]["qty"] -= 1
                     st.rerun()
-                else:
-                    st.warning("이미 0개예요!")
         with col_delete:
             if st.button("🗑️", key=f"del_{idx}", use_container_width=True):
                 st.session_state.inventory.pop(idx)
@@ -173,29 +93,207 @@ else:
 
         st.divider()
 
-    # ── 요약 통계 ──────────────────────────────────────────────
-    st.subheader("📊 요약")
-    total_items = len(st.session_state.inventory)
-    need_buy = sum(1 for x in st.session_state.inventory if x["qty"] <= 2)
+
+# ── 공통 함수: 물건 추가 폼 ────────────────────────────────────
+def render_add_form(default_category):
+    with st.form(f"add_form_{default_category}", clear_on_submit=True):
+        col1, col2, col3 = st.columns([2, 1, 1])
+        with col1:
+            item_name = st.text_input("물건 이름", placeholder="예) 두부, 토너, 우유")
+        with col2:
+            item_qty = st.number_input("수량", min_value=1, max_value=999, value=1)
+        with col3:
+            item_exp = st.date_input("유통기한", value=date.today() + timedelta(days=30))
+
+        item_category = st.selectbox("대분류", CATEGORY_NAMES,
+                                     index=CATEGORY_NAMES.index(default_category))
+
+        submitted = st.form_submit_button("➕ 추가하기", use_container_width=True)
+        if submitted:
+            if item_name.strip() == "":
+                st.error("물건 이름을 입력해 주세요!")
+            else:
+                existing = next(
+                    (i for i, x in enumerate(st.session_state.inventory)
+                     if x["name"] == item_name.strip() and x["category"] == item_category),
+                    None
+                )
+                if existing is not None:
+                    st.session_state.inventory[existing]["qty"] += item_qty
+                    st.success(f"'{item_name}' 수량을 {item_qty}개 추가했어요!")
+                else:
+                    st.session_state.inventory.append({
+                        "name": item_name.strip(),
+                        "qty": item_qty,
+                        "exp": item_exp,
+                        "category": item_category,
+                    })
+                    st.success(f"'{item_name}'을(를) 추가했어요!")
+
+
+# ── 공통 함수: 요약 통계 ──────────────────────────────────────
+def render_summary(category_filter=None):
+    today = date.today()
+    items = st.session_state.inventory
+    if category_filter:
+        items = [x for x in items if x["category"] == category_filter]
+
+    if not items:
+        return
+
+    total = len(items)
+    need_buy = sum(1 for x in items if x["qty"] <= 2)
     exp_warn = sum(
-        1 for x in st.session_state.inventory
-        if 0 <= (x["exp"] - today).days <= warning_days
+        1 for x in items
+        if 0 <= (x["exp"] - today).days <= CATEGORIES[x["category"]]["warning_days"]
     )
     c1, c2, c3 = st.columns(3)
-    c1.metric("전체 품목 수", f"{total_items}개")
-    c2.metric("구매 필요 품목", f"{need_buy}개")
+    c1.metric("전체 품목", f"{total}개")
+    c2.metric("구매 필요", f"{need_buy}개")
     c3.metric("유통기한 주의", f"{exp_warn}개")
 
-    # ── CSV 내보내기 ───────────────────────────────────────────
+
+# ══════════════════════════════════════════════════════════════
+# 탭 1 — 화장품
+# ══════════════════════════════════════════════════════════════
+with tab_cosmetic:
+    st.subheader("💄 화장품 재고")
+    st.caption("유통기한 30일 이내 시 주의 표시")
+    render_summary("💄 화장품")
     st.divider()
-    df_export = pd.DataFrame([
-        {"물건이름": x["name"], "수량": x["qty"], "유통기한": x["exp"]}
-        for x in st.session_state.inventory
-    ])
-    csv_out = df_export.to_csv(index=False, encoding="utf-8-sig")
-    st.download_button(
-        label="📥 현재 재고 CSV로 저장",
-        data=csv_out,
-        file_name="우리집_재고.csv",
-        mime="text/csv"
-    )
+    render_inventory("💄 화장품")
+    st.subheader("➕ 화장품 추가")
+    render_add_form("💄 화장품")
+
+# ══════════════════════════════════════════════════════════════
+# 탭 2 — 식재료 (새것)
+# ══════════════════════════════════════════════════════════════
+with tab_new:
+    st.subheader("🛒 식재료 재고 (새것)")
+    st.caption("유통기한 7일 이내 시 주의 표시")
+    render_summary("🛒 식재료 (새것)")
+    st.divider()
+    render_inventory("🛒 식재료 (새것)")
+    st.subheader("➕ 식재료 (새것) 추가")
+    render_add_form("🛒 식재료 (새것)")
+
+# ══════════════════════════════════════════════════════════════
+# 탭 3 — 식재료 (냉장)
+# ══════════════════════════════════════════════════════════════
+with tab_fridge:
+    st.subheader("🧊 식재료 재고 (냉장)")
+    st.caption("유통기한 3일 이내 시 주의 표시")
+    render_summary("🧊 식재료 (냉장)")
+    st.divider()
+    render_inventory("🧊 식재료 (냉장)")
+    st.subheader("➕ 식재료 (냉장) 추가")
+    render_add_form("🧊 식재료 (냉장)")
+
+# ══════════════════════════════════════════════════════════════
+# 탭 4 — 전체보기
+# ══════════════════════════════════════════════════════════════
+with tab_all:
+    st.subheader("📋 전체 재고 현황")
+    render_summary()
+    st.divider()
+    render_inventory()
+
+# ══════════════════════════════════════════════════════════════
+# 탭 5 — CSV
+# ══════════════════════════════════════════════════════════════
+with tab_csv:
+    st.subheader("📂 CSV 파일로 한꺼번에 불러오기")
+
+    with st.expander("📋 CSV 형식 안내 (클릭해서 펼치기)"):
+        st.markdown("""
+**아래 형식으로 엑셀에서 만들어 CSV UTF-8로 저장하세요.**
+- 유통기한 형식: `YYYY-MM-DD` (예: 2025-06-01)
+- 대분류는 아래 세 가지 중 하나로 입력하세요:
+  - `💄 화장품`
+  - `🛒 식재료 (새것)`
+  - `🧊 식재료 (냉장)`
+""")
+        sample_df = pd.DataFrame({
+            "물건이름": ["토너", "두부", "우유"],
+            "수량": [2, 3, 1],
+            "유통기한": ["2026-01-01", "2025-06-01", "2025-05-20"],
+            "대분류": ["💄 화장품", "🛒 식재료 (새것)", "🧊 식재료 (냉장)"],
+        })
+        st.dataframe(sample_df, use_container_width=True)
+        sample_csv = sample_df.to_csv(index=False, encoding="utf-8-sig")
+        st.download_button(
+            label="⬇️ 샘플 CSV 다운로드",
+            data=sample_csv,
+            file_name="재고_샘플.csv",
+            mime="text/csv"
+        )
+
+    uploaded_file = st.file_uploader("CSV 파일 선택", type=["csv"])
+    if uploaded_file is not None:
+        try:
+            df_upload = pd.read_csv(uploaded_file, encoding="utf-8-sig")
+            df_upload.columns = df_upload.columns.str.strip()
+
+            required_cols = {"물건이름", "수량", "유통기한", "대분류"}
+            if not required_cols.issubset(set(df_upload.columns)):
+                st.error(f"❌ 열 이름을 확인해 주세요! 필요한 열: 물건이름, 수량, 유통기한, 대분류\n현재 열: {list(df_upload.columns)}")
+            else:
+                st.dataframe(df_upload, use_container_width=True)
+                mode = st.radio("불러오기 방식", ["기존 목록에 추가", "기존 목록 대체"], index=0)
+                if st.button("✅ 불러오기", use_container_width=True):
+                    if mode == "기존 목록 대체":
+                        st.session_state.inventory = []
+
+                    count, skipped = 0, 0
+                    for _, row in df_upload.iterrows():
+                        name = str(row["물건이름"]).strip()
+                        qty = int(row["수량"])
+                        category = str(row["대분류"]).strip()
+
+                        if category not in CATEGORY_NAMES:
+                            st.warning(f"⚠️ '{name}'의 대분류 '{category}'를 인식할 수 없어요. 건너뜀.")
+                            skipped += 1
+                            continue
+
+                        try:
+                            exp = pd.to_datetime(str(row["유통기한"])).date()
+                        except Exception:
+                            exp = date.today()
+                            st.warning(f"⚠️ '{name}'의 유통기한 형식 오류. 오늘 날짜로 대체할게요.")
+
+                        existing = next(
+                            (i for i, x in enumerate(st.session_state.inventory)
+                             if x["name"] == name and x["category"] == category),
+                            None
+                        )
+                        if existing is not None:
+                            st.session_state.inventory[existing]["qty"] += qty
+                        else:
+                            st.session_state.inventory.append({
+                                "name": name, "qty": qty,
+                                "exp": exp, "category": category
+                            })
+                        count += 1
+
+                    st.success(f"✅ {count}개 품목을 불러왔어요!" + (f" ({skipped}개 건너뜀)" if skipped else ""))
+                    st.rerun()
+
+        except Exception as e:
+            st.error(f"파일을 읽는 중 오류가 발생했어요: {e}")
+
+    # ── 내보내기 ────────────────────────────────────────────────
+    if st.session_state.inventory:
+        st.divider()
+        st.subheader("📥 현재 재고 CSV로 저장")
+        df_export = pd.DataFrame([
+            {"물건이름": x["name"], "수량": x["qty"],
+             "유통기한": x["exp"], "대분류": x["category"]}
+            for x in st.session_state.inventory
+        ])
+        csv_out = df_export.to_csv(index=False, encoding="utf-8-sig")
+        st.download_button(
+            label="📥 전체 재고 CSV 저장",
+            data=csv_out,
+            file_name="우리집_재고.csv",
+            mime="text/csv"
+        )
