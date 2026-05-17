@@ -35,8 +35,20 @@ if "editing" not in st.session_state:
 st.markdown("""
 <style>
 div[data-testid="stHorizontalBlock"] { align-items: center; margin-top: -0.3rem; margin-bottom: -0.3rem; }
-div[data-testid="stButton"] button { padding: 0.1rem 0.35rem; font-size: 0.80rem; }
+div[data-testid="stButton"] button {
+    padding: 0.05rem 0.25rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    min-height: 0;
+}
 hr { margin: 0.25rem 0 !important; }
+.item-wrap {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    height: 100%;
+    padding: 0.15rem 0;
+}
 .item-name {
     font-size: 0.90rem;
     font-weight: bold;
@@ -48,7 +60,15 @@ hr { margin: 0.25rem 0 !important; }
     color: gray;
     margin: 0;
     line-height: 1.2;
-    padding-bottom: 0.1rem;
+}
+.qty-text {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    font-size: 0.88rem;
+    font-weight: bold;
+    color: #333;
+    margin: 0;
 }
 .subcat-header {
     font-size: 0.78rem;
@@ -138,14 +158,17 @@ def render_inventory(category_filter=None, tab_key=""):
                         st.rerun()
             else:
                 st.markdown(
-                    f'<p class="item-name">{name_prefix}{item["name"]}</p>'
-                    f'<p class="item-badge">{badge_line}</p>',
+                    f'''<div class="item-wrap">
+<p class="item-name">{name_prefix}{item["name"]}</p>
+<p class="item-badge">{badge_line}</p>
+</div>''',
                     unsafe_allow_html=True,
                 )
 
         with col_qty:
             st.markdown(
-                f"<p style='color:#333; font-size:0.92rem; font-weight:bold; margin:0.3rem 0 0 0'>{item['qty']}개</p>",
+                f"<div style='display:flex; align-items:center; height:100%;'>"
+                f"<p style='color:#333; font-size:0.88rem; font-weight:bold; margin:0;'>{item['qty']}개</p></div>",
                 unsafe_allow_html=True,
             )
         with col_minus:
