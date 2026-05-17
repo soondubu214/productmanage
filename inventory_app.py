@@ -23,7 +23,7 @@ if "inventory" not in st.session_state:
 # ══════════════════════════════════════════════════════════════
 # 공통 함수: 카테고리별 재고 렌더링
 # ══════════════════════════════════════════════════════════════
-def render_inventory(category_filter=None):
+def render_inventory(category_filter=None, tab_key=""):
     today = date.today()
 
     if category_filter:
@@ -70,12 +70,12 @@ def render_inventory(category_filter=None):
                 unsafe_allow_html=True,
             )
         with col_minus:
-            if st.button("－1", key=f"minus_{idx}", use_container_width=True):
+            if st.button("－1", key=f"minus_{tab_key}_{idx}", use_container_width=True):
                 if item["qty"] > 0:
                     st.session_state.inventory[idx]["qty"] -= 1
                     st.rerun()
         with col_delete:
-            if st.button("🗑️", key=f"del_{idx}", use_container_width=True):
+            if st.button("🗑️", key=f"del_{tab_key}_{idx}", use_container_width=True):
                 st.session_state.inventory.pop(idx)
                 st.rerun()
 
@@ -149,7 +149,7 @@ with tab_beauty:
     st.caption("유통기한 30일 이내 시 주의 표시")
     render_summary("미용")
     st.divider()
-    render_inventory("미용")
+    render_inventory("미용", tab_key="beauty")
     st.subheader("➕ 추가하기")
     render_add_form("미용")
 
@@ -158,7 +158,7 @@ with tab_pantry:
     st.caption("유통기한 7일 이내 시 주의 표시")
     render_summary("팬트리")
     st.divider()
-    render_inventory("팬트리")
+    render_inventory("팬트리", tab_key="pantry")
     st.subheader("➕ 추가하기")
     render_add_form("팬트리")
 
@@ -167,7 +167,7 @@ with tab_fridge:
     st.caption("유통기한 3일 이내 시 주의 표시")
     render_summary("냉장고")
     st.divider()
-    render_inventory("냉장고")
+    render_inventory("냉장고", tab_key="fridge")
     st.subheader("➕ 추가하기")
     render_add_form("냉장고")
 
@@ -175,7 +175,7 @@ with tab_all:
     st.subheader("전체보기")
     render_summary()
     st.divider()
-    render_inventory()
+    render_inventory(tab_key="all")
 
 with tab_csv:
     st.subheader("CSV 파일로 한꺼번에 불러오기")
