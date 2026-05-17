@@ -2,13 +2,11 @@ import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
 
-# ── 페이지 설정 ──────────────────────────────────────────────
 st.set_page_config(page_title="🏠 우리집 재고 관리", layout="centered")
 
 st.title("🏠 우리집 재고 관리")
 st.caption("물건을 추가하고, 수량을 관리하고, 유통기한을 체크하세요!")
 
-# ── 대분류 정의 ───────────────────────────────────────────────
 CATEGORIES = {
     "미용":  {"warning_days": 30},
     "팬트리": {"warning_days": 7},
@@ -16,12 +14,22 @@ CATEGORIES = {
 }
 CATEGORY_NAMES = list(CATEGORIES.keys())
 
-# ── 세션 상태 초기화 ──────────────────────────────────────────
 if "inventory" not in st.session_state:
     st.session_state.inventory = []
+if "editing" not in st.session_state:
+    st.session_state.editing = {}
+
+# ── 행 간격 줄이는 CSS ────────────────────────────────────────
+st.markdown("""
+<style>
+div[data-testid="stHorizontalBlock"] { align-items: center; margin-bottom: -0.5rem; }
+div[data-testid="stButton"] button { padding: 0.15rem 0.4rem; font-size: 0.82rem; }
+hr { margin: 0.4rem 0 !important; }
+</style>
+""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════
-# 공통 함수: 카테고리별 재고 렌더링
+# 공통 함수
 # ══════════════════════════════════════════════════════════════
 def render_inventory(category_filter=None, tab_key=""):
     today = date.today()
@@ -59,14 +67,45 @@ def render_inventory(category_filter=None, tab_key=""):
             badges.insert(0, f"[{item['category']}]")
 
         badge_str = "  ".join(badges)
+        edit_key = f"{tab_key}_{idx}"
+        is_editing = st.session_state.editing.get(edit_key, False)
 
         col_name, col_qty, col_minus, col_plus, col_delete = st.columns([3, 1, 1, 1, 1])
+
         with col_name:
-            st.markdown(f"**{item['name']}**  \n{badge_str}")
+            if is_editing:
+                new_name = st.text_input(
+                    "품목명 수정",
+                    value=item["name"],
+                    key=f"edit_input_{edit_key}",
+                    label_visibility="collapsed",
+                )
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("저장", key=f"save_{edit_key}", use_container_width=True):
+                        if new_name.strip():
+                            st.session_state.inventory[idx]["name"] = new_name.strip()
+                        st.session_state.editing[edit_key] = False
+                        st.rerun()
+                with c2:
+                    if st.button("취소", key=f"cancel_{edit_key}", use_container_width=True):
+                        st.session_state.editing[edit_key] = False
+                        st.rerun()
+            else:
+                st.markdown(
+                    f"<p style='margin:0.3rem 0 0.1rem 0; font-size:0.92rem; line-height:1.4'>"
+                    f"<strong>{item['name']}</strong> "
+                    f"<span style='font-size:0.72rem; color:gray;'>{badge_str}</span></p>",
+                    unsafe_allow_html=True,
+                )
+                if st.button("✏️", key=f"edit_btn_{edit_key}", use_container_width=True):
+                    st.session_state.editing[edit_key] = True
+                    st.rerun()
+
         with col_qty:
-            qty_color = "red" if item["qty"] <= 1 else "black"
+            qty_color = "red" if item["qty"] <= 1 else "#333"
             st.markdown(
-                f"<p style='color:{qty_color}; font-size:1.1rem; font-weight:bold; margin:0.5rem 0 0 0'>{item['qty']}개</p>",
+                f"<p style='color:{qty_color}; font-size:0.92rem; font-weight:bold; margin:0.3rem 0 0 0'>{item['qty']}개</p>",
                 unsafe_allow_html=True,
             )
         with col_minus:
