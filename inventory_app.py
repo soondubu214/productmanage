@@ -87,7 +87,7 @@ def render_inventory(category_filter=None, tab_key=""):
         return
 
     def render_row(idx, item, wd):
-        days_left = (item["exp"] - today).days
+        days_left = (item["exp"] - today).days if item["exp"] is not None else None
 
         status_badges = []
         if item["qty"] <= 0:
@@ -96,8 +96,15 @@ def render_inventory(category_filter=None, tab_key=""):
             status_badges.insert(0, f"[{item['category']}]")
         status_str = "  ".join(status_badges)
 
-        name_prefix = "⚠️ " if (days_left < 0 or days_left <= wd) else ""
-        exp_text = item["exp"].strftime("%Y.%m.%d")
+        if item["exp"] is None:
+            name_prefix = ""
+            exp_text = ""
+        elif days_left < 0 or days_left <= wd:
+            name_prefix = "⚠️ "
+            exp_text = item["exp"].strftime("%Y.%m.%d")
+        else:
+            name_prefix = ""
+            exp_text = item["exp"].strftime("%Y.%m.%d")
         badge_line = exp_text + ("  " + status_str if status_str else "")
 
         edit_key = f"{tab_key}_{idx}"
@@ -190,7 +197,12 @@ def render_add_form(default_category):
         with col2:
             item_qty = st.number_input("수량", min_value=0, max_value=999, value=1)
         with col3:
-            item_exp = st.date_input("유통기한", value=date.today() + timedelta(days=30))
+            use_exp = st.checkbox("유통기한 입력", value=False)
+        if use_exp:
+            item_exp = st.date_input("유통기한 날짜", value=date.today() + timedelta(days=30),
+                                     label_visibility="collapsed")
+        else:
+            item_exp = None
 
         col_cat, col_sub = st.columns(2)
         with col_cat:
@@ -242,7 +254,8 @@ def render_summary(category_filter=None):
     out_of_stock = sum(1 for x in items if x["qty"] <= 0)
     exp_warn = sum(
         1 for x in items
-        if (x["exp"] - today).days <= CATEGORIES[x["category"]]["warning_days"]
+        if x["exp"] is not None and
+        (x["exp"] - today).days <= CATEGORIES[x["category"]]["warning_days"]
     )
     c1, c2, c3 = st.columns(3)
     c1.metric("전체 품목", f"{total}개")
@@ -354,12 +367,12 @@ with tab_csv:
 
                         raw_exp = row["유통기한"]
                         if pd.isna(raw_exp) or str(raw_exp).strip() == "":
-                            exp = date.today()
+                            exp = None
                         else:
                             try:
                                 exp = pd.to_datetime(str(raw_exp).strip()).date()
                             except Exception:
-                                exp = date.today()
+                                exp = None
 
                         # 중분류: 있으면 사용, 없으면 기타
                         raw_sub = row.get("중분류", None)
@@ -393,7 +406,7 @@ with tab_csv:
     if st.session_state.inventory:
         st.divider()
         df_export = pd.DataFrame([
-            {"물건이름": x["name"], "수량": x["qty"], "유통기한": x["exp"],
+            {"물건이름": x["name"], "수량": x["qty"], "유통기한": x["exp"] if x["exp"] is not None else "",
              "대분류": x["category"], "중분류": x.get("subcategory","기타")}
             for x in st.session_state.inventory
         ])
