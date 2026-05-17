@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
+from streamlit.components.v1 import html as st_html
 
 st.set_page_config(page_title="🏠 우리집 재고 관리", layout="centered")
 
@@ -19,14 +20,33 @@ if "inventory" not in st.session_state:
 if "editing" not in st.session_state:
     st.session_state.editing = {}
 
-# ── 행 간격 줄이는 CSS ────────────────────────────────────────
 st.markdown("""
 <style>
 div[data-testid="stHorizontalBlock"] { align-items: center; margin-bottom: -0.5rem; }
 div[data-testid="stButton"] button { padding: 0.15rem 0.4rem; font-size: 0.82rem; }
 hr { margin: 0.4rem 0 !important; }
+
+/* 품목명 hover 밑줄 스타일 */
+.item-name {
+    font-size: 0.95rem;
+    font-weight: bold;
+    margin: 0.3rem 0 0.05rem 0;
+    cursor: pointer;
+    display: inline-block;
+    border-bottom: 2px solid transparent;
+    transition: border-color 0.15s;
+}
+.item-name:hover {
+    border-bottom: 2px solid #555;
+}
+.item-badge {
+    font-size: 0.72rem;
+    color: gray;
+    margin: 0 0 0.2rem 0;
+}
 </style>
 """, unsafe_allow_html=True)
+
 
 # ══════════════════════════════════════════════════════════════
 # 공통 함수
@@ -50,23 +70,24 @@ def render_inventory(category_filter=None, tab_key=""):
         days_left = (item["exp"] - today).days
         wd = warning_days if warning_days else CATEGORIES[item["category"]]["warning_days"]
 
-        badges = []
+        # 뱃지
+        status_badges = []
         if item["qty"] <= 0:
-            badges.append("🔴 재고 없음")
+            status_badges.append("🔴 재고 없음")
         elif item["qty"] <= 1:
-            badges.append("🛒 구매 필요")
+            status_badges.append("🛒 구매 필요")
 
         if days_left < 0:
-            badges.append("⛔ 유통기한 만료")
+            exp_badge = "⛔ 유통기한 만료"
         elif days_left <= wd:
-            badges.append(f"⚠️ 주의 (D-{days_left})")
+            exp_badge = f"⚠️ 주의 (D-{days_left})"
         else:
-            badges.append(f"✅ D-{days_left}")
+            exp_badge = f"✅ D-{days_left}"
 
         if not category_filter:
-            badges.insert(0, f"[{item['category']}]")
+            status_badges.insert(0, f"[{item['category']}]")
 
-        badge_str = "  ".join(badges)
+        status_str = "  ".join(status_badges)
         edit_key = f"{tab_key}_{idx}"
         is_editing = st.session_state.editing.get(edit_key, False)
 
@@ -92,13 +113,48 @@ def render_inventory(category_filter=None, tab_key=""):
                         st.session_state.editing[edit_key] = False
                         st.rerun()
             else:
+                # 품목명: hover 밑줄 + 더블클릭 시 edit 버튼 자동 클릭
+                btn_key = f"edit_btn_{edit_key}"
                 st.markdown(
-                    f"<p style='margin:0.3rem 0 0.1rem 0; font-size:0.92rem; line-height:1.4'>"
-                    f"<strong>{item['name']}</strong> "
-                    f"<span style='font-size:0.72rem; color:gray;'>{badge_str}</span></p>",
+                    f"""
+                    <p class="item-name" ondblclick="triggerEdit('{btn_key}')">{item['name']}</p>
+                    <p class="item-badge">{exp_badge}{"  " + status_str if status_str else ""}</p>
+                    <script>
+                    function triggerEdit(key) {{
+                        // Streamlit 버튼 찾아서 클릭
+                        const btns = window.parent.document.querySelectorAll('button[kind="secondary"], button');
+                        for (const btn of btns) {{
+                            if (btn.innerText.trim() === '✏️_' + key) {{
+                                btn.click();
+                                break;
+                            }}
+                        }}
+                        // data-testid로 찾기
+                        const allBtns = window.parent.document.querySelectorAll('div[data-testid="stButton"] button');
+                        allBtns.forEach(btn => {{
+                            if (btn.closest('div[data-testid="stButton"]') &&
+                                btn.closest('div[data-testid="stButton"]').previousSibling) {{
+                            }}
+                        }});
+                        // key 기반으로 숨겨진 버튼 클릭
+                        setTimeout(() => {{
+                            const hiddenBtns = window.parent.document.querySelectorAll('button');
+                            hiddenBtns.forEach(b => {{
+                                if (b.getAttribute('data-edit-key') === key) b.click();
+                            }});
+                        }}, 50);
+                    }}
+                    </script>
+                    """,
                     unsafe_allow_html=True,
                 )
-                if st.button("✏️", key=f"edit_btn_{edit_key}", use_container_width=True):
+                # 실제 트리거용 숨김 버튼
+                st.markdown(
+                    f"<style>div[data-testid='stButton']:has(button[data-edit-key='{edit_key}']) {{ display:none; }}</style>",
+                    unsafe_allow_html=True,
+                )
+                clicked = st.button("✏️", key=btn_key, use_container_width=True)
+                if clicked:
                     st.session_state.editing[edit_key] = True
                     st.rerun()
 
@@ -228,9 +284,7 @@ with tab_csv:
 **아래 형식으로 엑셀에서 만들어 CSV UTF-8로 저장하세요.**
 - 유통기한 형식: `YYYY-MM-DD` (예: 2025-06-01)
 - 대분류는 아래 세 가지 중 하나로 정확히 입력하세요:
-  - `미용`
-  - `팬트리`
-  - `냉장고`
+  - `미용` / `팬트리` / `냉장고`
 """)
         sample_df = pd.DataFrame({
             "물건이름": ["토너", "두부", "우유"],
@@ -315,3 +369,33 @@ with tab_csv:
             file_name="우리집_재고.csv",
             mime="text/csv"
         )
+
+# ── 더블클릭 → 수정 버튼 연결 JS ─────────────────────────────
+st.markdown("""
+<script>
+(function() {
+    function attachDblClick() {
+        const names = window.parent.document.querySelectorAll('.item-name');
+        names.forEach(el => {
+            if (el._dblAttached) return;
+            el._dblAttached = true;
+            el.addEventListener('dblclick', () => {
+                // 같은 행 안에서 ✏️ 버튼 찾기
+                const row = el.closest('div[data-testid="column"]')
+                              ?.closest('div[data-testid="stHorizontalBlock"]');
+                if (!row) return;
+                const btns = row.querySelectorAll('button');
+                btns.forEach(b => {
+                    if (b.innerText.trim() === '✏️') b.click();
+                });
+            });
+        });
+    }
+    // 초기 + DOM 변경 시 재연결
+    attachDblClick();
+    new MutationObserver(attachDblClick).observe(
+        window.parent.document.body, { childList: true, subtree: true }
+    );
+})();
+</script>
+""", unsafe_allow_html=True)
