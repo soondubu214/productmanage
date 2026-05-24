@@ -213,6 +213,31 @@ def render_inventory(category_filter=None, tab_key=""):
 
 
 def render_add_form(default_category):
+    # 직접 입력 중분류를 session_state에 미리 보존
+    sub_key = f"new_sub_val_{default_category}"
+    if sub_key not in st.session_state:
+        st.session_state[sub_key] = ""
+
+    col_cat, col_sub = st.columns(2)
+    with col_cat:
+        item_category = st.selectbox("대분류", CATEGORY_NAMES,
+                                     index=CATEGORY_NAMES.index(default_category),
+                                     key=f"cat_{default_category}")
+    with col_sub:
+        subs = CATEGORIES[item_category]["subcategories"]
+        sub_options = subs + ["직접 입력"]
+        sub_choice = st.selectbox("중분류", sub_options, key=f"sub_choice_{default_category}")
+
+    if sub_choice == "직접 입력":
+        st.session_state[sub_key] = st.text_input(
+            "중분류 직접 입력", value=st.session_state[sub_key],
+            placeholder="예) 음료", key=f"new_sub_input_{default_category}"
+        )
+        item_sub = st.session_state[sub_key]
+    else:
+        st.session_state[sub_key] = ""
+        item_sub = sub_choice
+
     with st.form(f"add_form_{default_category}", clear_on_submit=True):
         col1, col2, col3 = st.columns([2, 1, 1])
         with col1:
@@ -227,24 +252,14 @@ def render_add_form(default_category):
         else:
             item_exp = None
 
-        col_cat, col_sub = st.columns(2)
-        with col_cat:
-            item_category = st.selectbox("대분류", CATEGORY_NAMES,
-                                         index=CATEGORY_NAMES.index(default_category))
-        with col_sub:
-            subs = CATEGORIES[item_category]["subcategories"]
-            sub_options = subs + ["직접 입력"]
-            sub_choice = st.selectbox("중분류", sub_options)
-        if sub_choice == "직접 입력":
-            item_sub = st.text_input("중분류 직접 입력", placeholder="예) 영양제", key=f"new_sub_{default_category}")
-        else:
-            item_sub = sub_choice
-
         submitted = st.form_submit_button("➕ 추가하기", use_container_width=True)
         if submitted:
             if item_name.strip() == "":
                 st.error("물건 이름을 입력해 주세요!")
             else:
+                final_sub = st.session_state[sub_key] if sub_choice == "직접 입력" else item_sub
+                if not final_sub.strip():
+                    final_sub = "기타"
                 existing = next(
                     (i for i, x in enumerate(st.session_state.inventory)
                      if x["name"] == item_name.strip() and x["category"] == item_category),
@@ -253,15 +268,16 @@ def render_add_form(default_category):
                 if existing is not None:
                     st.session_state.inventory[existing]["qty"] += item_qty
                 else:
-                    if item_sub and item_sub not in CATEGORIES[item_category]["subcategories"]:
-                        CATEGORIES[item_category]["subcategories"].append(item_sub)
+                    if final_sub not in CATEGORIES[item_category]["subcategories"]:
+                        CATEGORIES[item_category]["subcategories"].append(final_sub)
                     st.session_state.inventory.append({
                         "name": item_name.strip(),
                         "qty": item_qty,
                         "exp": item_exp,
                         "category": item_category,
-                        "subcategory": item_sub if item_sub else "기타",
+                        "subcategory": final_sub,
                     })
+                st.session_state[sub_key] = ""
                 st.rerun()
 
 
