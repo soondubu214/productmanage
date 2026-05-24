@@ -252,7 +252,6 @@ def render_add_form(default_category):
                 )
                 if existing is not None:
                     st.session_state.inventory[existing]["qty"] += item_qty
-                    st.success(f"'{item_name}' 수량을 {item_qty}개 추가했어요!")
                 else:
                     if item_sub and item_sub not in CATEGORIES[item_category]["subcategories"]:
                         CATEGORIES[item_category]["subcategories"].append(item_sub)
@@ -263,7 +262,7 @@ def render_add_form(default_category):
                         "category": item_category,
                         "subcategory": item_sub if item_sub else "기타",
                     })
-                    st.success(f"'{item_name}'을(를) 추가했어요!")
+                st.rerun()
 
 
 def render_summary(category_filter=None):
