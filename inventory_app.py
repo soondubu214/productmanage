@@ -31,6 +31,22 @@ if "inventory" not in st.session_state:
     st.session_state.inventory = []
 if "editing" not in st.session_state:
     st.session_state.editing = {}
+# 중분류 목록을 session_state에 저장 (새로고침 전까지 유지)
+if "subcategories" not in st.session_state:
+    st.session_state.subcategories = {
+        cat: list(info["subcategories"]) for cat, info in CATEGORIES.items()
+    }
+
+def get_subs(category):
+    """항상 session_state 기준으로 중분류 조회, 가나다 + 기타 맨 뒤"""
+    subs = st.session_state.subcategories.get(category, ["기타"])
+    non_etc = sorted([s for s in subs if s != "기타"])
+    return non_etc + (["기타"] if "기타" in subs else [])
+
+def add_sub(category, new_sub):
+    """새 중분류 추가 (중복 방지)"""
+    if new_sub and new_sub not in st.session_state.subcategories.get(category, []):
+        st.session_state.subcategories.setdefault(category, ["기타"]).append(new_sub)
 
 st.markdown("""
 <style>
@@ -92,7 +108,7 @@ def render_inventory(category_filter=None, tab_key=""):
         warning_days = CATEGORIES[category_filter]["warning_days"]
         # 실제 데이터에 있는 중분류를 순서 보존하며 동적으로 추출
         # (CATEGORIES에 정의된 순서 먼저, 그 다음 새로 추가된 것)
-        defined = CATEGORIES[category_filter]["subcategories"]
+        defined = get_subs(category_filter)
         actual = list(dict.fromkeys(
             x.get("subcategory", "기타") for _, x in all_items
         ))
@@ -141,7 +157,7 @@ def render_inventory(category_filter=None, tab_key=""):
 
                 # 중분류 — 실제 데이터 기준 전체 목록 + 직접입력
                 current_cat = item["category"]
-                all_subs = CATEGORIES[current_cat]["subcategories"]
+                all_subs = get_subs(current_cat)
                 cur_sub = item.get("subcategory", "기타")
                 if cur_sub not in all_subs:
                     all_subs = all_subs + [cur_sub]
@@ -175,8 +191,7 @@ def render_inventory(category_filter=None, tab_key=""):
                         final_sub = new_sub.strip() if new_sub_choice == "직접 입력" else new_sub
                         if not final_sub:
                             final_sub = "기타"
-                        if final_sub not in CATEGORIES[current_cat]["subcategories"]:
-                            CATEGORIES[current_cat]["subcategories"].append(final_sub)
+                        add_sub(current_cat, final_sub)
                         st.session_state.inventory[idx]["subcategory"] = final_sub
                         st.session_state.inventory[idx]["exp"] = new_exp
                         st.session_state.editing[edit_key] = False
@@ -253,7 +268,7 @@ def render_add_form(default_category):
                                      index=CATEGORY_NAMES.index(default_category),
                                      key=f"cat_{default_category}")
     with col_sub:
-        subs = CATEGORIES[item_category]["subcategories"]
+        subs = get_subs(item_category)
         sub_options = subs + ["직접 입력"]
         sub_choice = st.selectbox("중분류", sub_options, key=f"sub_choice_{default_category}")
 
@@ -297,8 +312,7 @@ def render_add_form(default_category):
                 if existing is not None:
                     st.session_state.inventory[existing]["qty"] += item_qty
                 else:
-                    if final_sub not in CATEGORIES[item_category]["subcategories"]:
-                        CATEGORIES[item_category]["subcategories"].append(final_sub)
+                    add_sub(item_category, final_sub)
                     st.session_state.inventory.append({
                         "name": item_name.strip(),
                         "qty": item_qty,
@@ -447,9 +461,7 @@ with tab_csv:
                             subcategory = "기타"
                         else:
                             subcategory = str(raw_sub).strip()
-                            # 새 중분류면 자동 등록
-                            if subcategory not in CATEGORIES[category]["subcategories"]:
-                                CATEGORIES[category]["subcategories"].append(subcategory)
+                            add_sub(category, subcategory)
 
                         existing = next(
                             (i for i, x in enumerate(st.session_state.inventory)
