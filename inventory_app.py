@@ -134,22 +134,51 @@ def render_inventory(category_filter=None, tab_key=""):
 
         with col_name:
             if is_editing:
-                new_name = st.text_input("품목명 수정", value=item["name"],
+                # 품목명
+                new_name = st.text_input("품목명", value=item["name"],
                                          key=f"edit_input_{edit_key}",
                                          label_visibility="collapsed")
-                # 중분류 수정도 가능
+
+                # 중분류 — 실제 데이터 기준 전체 목록 + 직접입력
                 current_cat = item["category"]
-                subs = CATEGORIES[current_cat]["subcategories"]
-                cur_sub_idx = subs.index(item.get("subcategory","기타")) if item.get("subcategory","기타") in subs else len(subs)-1
-                new_sub = st.selectbox("중분류", subs, index=cur_sub_idx,
-                                       key=f"edit_sub_{edit_key}",
-                                       label_visibility="collapsed")
+                all_subs = CATEGORIES[current_cat]["subcategories"]
+                cur_sub = item.get("subcategory", "기타")
+                if cur_sub not in all_subs:
+                    all_subs = all_subs + [cur_sub]
+                sub_options = all_subs + ["직접 입력"]
+                cur_sub_idx = all_subs.index(cur_sub) if cur_sub in all_subs else 0
+                new_sub_choice = st.selectbox("중분류", sub_options, index=cur_sub_idx,
+                                              key=f"edit_sub_{edit_key}")
+                if new_sub_choice == "직접 입력":
+                    new_sub = st.text_input("중분류 직접 입력", placeholder="예) 음료",
+                                            key=f"edit_sub_input_{edit_key}")
+                else:
+                    new_sub = new_sub_choice
+
+                # 유통기한 — 체크박스로 토글
+                has_exp = item["exp"] is not None
+                use_exp = st.checkbox("유통기한 입력", value=has_exp,
+                                      key=f"edit_use_exp_{edit_key}")
+                if use_exp:
+                    default_exp = item["exp"] if has_exp else date.today()
+                    new_exp = st.date_input("유통기한 날짜", value=default_exp,
+                                            key=f"edit_exp_{edit_key}",
+                                            label_visibility="collapsed")
+                else:
+                    new_exp = None
+
                 c1, c2 = st.columns(2)
                 with c1:
                     if st.button("저장", key=f"save_{edit_key}", use_container_width=True):
                         if new_name.strip():
                             st.session_state.inventory[idx]["name"] = new_name.strip()
-                        st.session_state.inventory[idx]["subcategory"] = new_sub
+                        final_sub = new_sub.strip() if new_sub_choice == "직접 입력" else new_sub
+                        if not final_sub:
+                            final_sub = "기타"
+                        if final_sub not in CATEGORIES[current_cat]["subcategories"]:
+                            CATEGORIES[current_cat]["subcategories"].append(final_sub)
+                        st.session_state.inventory[idx]["subcategory"] = final_sub
+                        st.session_state.inventory[idx]["exp"] = new_exp
                         st.session_state.editing[edit_key] = False
                         st.rerun()
                 with c2:
